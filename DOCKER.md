@@ -83,6 +83,10 @@ docker run -it --rm \
   serena
 ```
 
+## Using Docker in Claude Code
+
+```claude mcp add serena -- docker run --rm -i --network host -v /path/to/my/project/:/workspaces/ ghcr.io/oraios/serena:latest serena-mcp-server --transport stdio```
+
 ## Accessing the Dashboard
 
 Once running, access the web dashboard at:
