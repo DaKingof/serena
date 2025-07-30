@@ -83,6 +83,11 @@ docker run -it --rm \
   serena
 ```
 
+## Using Docker with Claude Code Integration
+
+- To **integrate with Claude Code**, you can use the following command:
+```claude mcp add serena -- docker run --rm -i --network host -v /path/to/your/project/:/workspaces/project ghcr.io/oraios/serena:latest serena-mcp-server --transport stdio```
+
 ## Accessing the Dashboard
 
 Once running, access the web dashboard at:
