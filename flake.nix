@@ -82,16 +82,16 @@
         default = pkgs.mkShell {
           packages = [
             python
-            pkgs.gcc
+            pkgs.gccStdenv
             pkgs.uv
           ];
           env =
             {
               UV_PYTHON_DOWNLOADS = "never";
               UV_PYTHON = python.interpreter;
-	      CC  = "${pkgs.gcc}/bin/gcc";
-    	      CXX = "${pkgs.gcc}/bin/g++";
-    	      LD  = "${pkgs.gcc}/bin/gcc";
+	      CC  = "${pkgs.gccStdenv}/bin/gcc";
+    	      CXX = "${pkgs.gccStdenv}/bin/g++";
+    	      LD  = "${pkgs.gccStdenv}/bin/gcc";
             }
             // lib.optionalAttrs pkgs.stdenv.isLinux {
               LD_LIBRARY_PATH = lib.makeLibraryPath pkgs.pythonManylinuxPackages.manylinux1;
