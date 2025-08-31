@@ -82,6 +82,7 @@
         default = pkgs.mkShell {
           packages = [
             python
+            pkgs.gcc
             pkgs.uv
           ];
           env =
