@@ -84,6 +84,7 @@
             python
             pkgs.gccStdenv
             pkgs.uv
+            pkgs.binutils
           ];
           env =
             {
