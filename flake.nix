@@ -90,6 +90,7 @@
             {
               UV_PYTHON_DOWNLOADS = "never";
               UV_PYTHON = python.interpreter;
+              PATH = "${pkgs.binutils}/bin:$PATH";
 	      CC  = "${pkgs.gccStdenv}/bin/gcc";
     	      CXX = "${pkgs.gccStdenv}/bin/g++";
     	      LD  = "${pkgs.gccStdenv}/bin/gcc";
