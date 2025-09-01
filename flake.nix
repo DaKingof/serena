@@ -92,9 +92,7 @@
               UV_PYTHON = python.interpreter;
               PATH = "${pkgs.binutils}/bin:$PATH";
             }
-            // lib.optionalAttrs pkgs.stdenv.isLinux {
-              LD_LIBRARY_PATH = lib.makeLibraryPath [ pkgs.pythonManylinuxPackages.manylinux1 pkgs.gcc.cc.lib ];
-            };
+            // lib.optionalAttrs pkgs.stdenv.isLinux {};
           shellHook = ''
             unset PYTHONPATH
           '';
