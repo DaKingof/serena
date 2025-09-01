@@ -181,12 +181,22 @@ class SolidLanguageServerHandler:
         child_proc_env.update(self.process_launch_info.env)
 
         cmd = self.process_launch_info.cmd
+
+        # Check for flake.nix and wrap the command with nix shell if it exists
+        project_root = self.process_launch_info.cwd
+        flake_path = os.path.join(project_root, "flake.nix")
+        if os.path.exists(flake_path):
+            log.info("flake.nix found, wrapping LSP command with nix shell to provide build dependencies.")
+            nix_wrapper = ["nix", "shell", "nixpkgs#gcc", "nixpkgs#binutils", "--command"]
+            original_command_str = " ".join(cmd)
+            cmd = nix_wrapper + [original_command_str]
+
         is_windows = platform.system() == "Windows"
         if not isinstance(cmd, str) and not is_windows:
             # Since we are using the shell, we need to convert the command list to a single string
             # on Linux/macOS
             cmd = " ".join(cmd)
-        log.info("Starting language server process via command: %s", self.process_launch_info.cmd)
+        log.info("Starting language server process via command: %s", cmd)
         kwargs = subprocess_kwargs()
         kwargs["start_new_session"] = self.start_independent_lsp_process
         self.process = subprocess.Popen(
