@@ -82,7 +82,7 @@
         default = pkgs.mkShell {
           packages = [
             python
-            pkgs.gccStdenv
+            pkgs.gcc
             pkgs.uv
             pkgs.binutils
           ];
@@ -90,12 +90,10 @@
             {
               UV_PYTHON_DOWNLOADS = "never";
               UV_PYTHON = python.interpreter;
-	      CC  = "${pkgs.gccStdenv}/bin/gcc";
-    	      CXX = "${pkgs.gccStdenv}/bin/g++";
-    	      LD  = "${pkgs.gccStdenv}/bin/gcc";
+              PATH = "${pkgs.binutils}/bin:$PATH";
             }
             // lib.optionalAttrs pkgs.stdenv.isLinux {
-              LD_LIBRARY_PATH = lib.makeLibraryPath pkgs.pythonManylinuxPackages.manylinux1;
+              LD_LIBRARY_PATH = lib.makeLibraryPath [ pkgs.pythonManylinuxPackages.manylinux1 pkgs.gcc.cc.lib ];
             };
           shellHook = ''
             unset PYTHONPATH
