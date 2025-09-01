@@ -182,13 +182,31 @@ class SolidLanguageServerHandler:
 
         cmd = self.process_launch_info.cmd
 
-        # Check for flake.nix and wrap the command with nix shell if it exists
+        # On NixOS, wrap language servers that need build tools with nix shell
+        def needs_build_tools(command):
+            """Check if this language server commonly needs build tools"""
+            cmd_str = " ".join(command) if isinstance(command, list) else command
+            return any(tool in cmd_str for tool in ['rust-analyzer', 'clangd', 'gopls'])
+        
+        def is_nixos():
+            """Check if we're running on NixOS"""
+            try:
+                with open('/etc/os-release', 'r') as f:
+                    return 'nixos' in f.read().lower()
+            except (FileNotFoundError, PermissionError):
+                return False
+        
+        # Apply nix shell wrapper if on NixOS and the language server needs build tools
+        # or if a flake.nix exists (original behavior)
         project_root = self.process_launch_info.cwd
         flake_path = os.path.join(project_root, "flake.nix")
-        if os.path.exists(flake_path):
-            log.info("flake.nix found, wrapping LSP command with nix shell to provide build dependencies.")
+        should_use_nix = os.path.exists(flake_path) or (is_nixos() and needs_build_tools(cmd))
+        
+        if should_use_nix:
+            reason = "flake.nix found" if os.path.exists(flake_path) else "NixOS detected with build-tool language server"
+            log.info(f"{reason}, wrapping LSP command with nix shell to provide build dependencies.")
             nix_wrapper = ["nix", "shell", "nixpkgs#stdenv", "--command"]
-            original_command_str = " ".join(cmd)
+            original_command_str = " ".join(cmd) if isinstance(cmd, list) else cmd
             cmd = nix_wrapper + [original_command_str]
 
         is_windows = platform.system() == "Windows"
