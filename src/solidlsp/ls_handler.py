@@ -187,7 +187,7 @@ class SolidLanguageServerHandler:
         flake_path = os.path.join(project_root, "flake.nix")
         if os.path.exists(flake_path):
             log.info("flake.nix found, wrapping LSP command with nix shell to provide build dependencies.")
-            nix_wrapper = ["nix", "shell", "nixpkgs#gcc", "nixpkgs#binutils", "--command"]
+            nix_wrapper = ["nix", "shell", "nixpkgs#stdenv", "--command"]
             original_command_str = " ".join(cmd)
             cmd = nix_wrapper + [original_command_str]
 
