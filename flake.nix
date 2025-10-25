@@ -3,6 +3,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 <<<<<<< HEAD
+<<<<<<< HEAD
     flake-utils = {
       url = "github:numtide/flake-utils";
     };
@@ -13,6 +14,11 @@
     };
 
 >>>>>>> d94ed33 (Update flake.nix)
+=======
+    flake-utils = {
+      url = "github:numtide/flake-utils";
+    };
+>>>>>>> 6cbb423 (Refactor 'serena' package and update devShells)
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -33,6 +39,7 @@
       };
     };
   };
+<<<<<<< HEAD
   outputs =
     {
       nixpkgs,
@@ -106,6 +113,8 @@
             export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$libdir"
           done
 =======
+=======
+>>>>>>> 6cbb423 (Refactor 'serena' package and update devShells)
   outputs = {
     nixpkgs,
     uv2nix,
@@ -116,8 +125,8 @@
   }:
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = import nixpkgs {inherit system;};
-
       inherit (pkgs) lib;
+<<<<<<< HEAD
 >>>>>>> d94ed33 (Update flake.nix)
 
           # Clean up LD_LIBRARY_PATH (remove leading/trailing colons)
@@ -138,10 +147,12 @@
           export DOTNET_MULTILEVEL_LOOKUP=0
           export DOTNET_ROOT="${pkgs.dotnet-sdk_8}"
 =======
+=======
+      workspace = uv2nix.lib.workspace.loadWorkspace {workspaceRoot = ./.;};
+>>>>>>> 6cbb423 (Refactor 'serena' package and update devShells)
       overlay = workspace.mkPyprojectOverlay {
         sourcePreference = "wheel"; # or sourcePreference = "sdist";
       };
-
       pyprojectOverrides = final: prev: {
         # Add setuptools for packages that need it during build
         ruamel-yaml-clib = prev.ruamel-yaml-clib.overrideAttrs (old: {
@@ -149,10 +160,22 @@
             final.setuptools
           ];
         });
+        
+        # Add build dependencies for packages that need native compilation
+        # This ensures clang/lld are available during the build
+        cryptography = prev.cryptography.overrideAttrs (old: {
+          nativeBuildInputs = (old.nativeBuildInputs or []) ++ [
+            pkgs.clang
+            pkgs.lld
+            pkgs.pkg-config
+            pkgs.openssl.dev
+          ];
+          buildInputs = (old.buildInputs or []) ++ [
+            pkgs.openssl
+          ];
+        });
       };
-
       python = pkgs.python311;
-
       pythonSet =
         (pkgs.callPackage pyproject-nix.build.packages {
           inherit python;
@@ -166,6 +189,7 @@
         );
     in rec {
       formatter = pkgs.alejandra;
+<<<<<<< HEAD
 >>>>>>> d94ed33 (Update flake.nix)
 
 <<<<<<< HEAD
@@ -271,6 +295,48 @@
             };
           default = packages.serena;
 =======
+=======
+      packages = {
+        serena = let
+          venv = pythonSet.mkVirtualEnv "serena" workspace.deps.default;
+        in 
+          # Wrap the virtualenv to include runtime dependencies
+          pkgs.stdenv.mkDerivation {
+            pname = "serena";
+            version = "0.1.0";
+            
+            nativeBuildInputs = [
+              pkgs.makeWrapper
+            ];
+            
+            buildInputs = [
+              pkgs.openssl
+              pkgs.stdenv.cc.cc.lib  # For libstdc++
+            ];
+            
+            phases = ["installPhase"];
+            
+            installPhase = ''
+              mkdir -p $out
+              cp -r ${venv}/* $out/
+              
+              # Wrap the binary with necessary runtime dependencies
+              wrapProgram $out/bin/serena \
+                --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath [
+                  pkgs.openssl
+                  pkgs.stdenv.cc.cc.lib
+                ]}" \
+                --set SSL_CERT_FILE "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" \
+                --set OPENSSL_DIR "${pkgs.openssl.dev}"
+            '';
+          };
+        default = packages.serena;
+      };
+      apps.default = {
+        type = "app";
+        program = "${packages.default}/bin/serena";
+      };
+>>>>>>> 6cbb423 (Refactor 'serena' package and update devShells)
       devShells = {
         default = pkgs.mkShell {
           packages = [
@@ -278,7 +344,7 @@
             pkgs.uv
             pkgs.rustup
           ];
-        nativeBuildInputs = [
+          nativeBuildInputs = [
             pkgs.openssl
             pkgs.pkg-config
             pkgs.clang
@@ -288,9 +354,16 @@
             {
               UV_PYTHON_DOWNLOADS = "never";
               UV_PYTHON = python.interpreter;
+              OPENSSL_DIR = "${pkgs.openssl.dev}";
+              PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
             }
             // lib.optionalAttrs pkgs.stdenv.isLinux {
-              LD_LIBRARY_PATH = lib.makeLibraryPath pkgs.pythonManylinuxPackages.manylinux1;
+              LD_LIBRARY_PATH = lib.makeLibraryPath (
+                pkgs.pythonManylinuxPackages.manylinux1 ++ [
+                  pkgs.openssl
+                  pkgs.stdenv.cc.cc.lib
+                ]
+              );
             };
           shellHook = ''
             unset PYTHONPATH
