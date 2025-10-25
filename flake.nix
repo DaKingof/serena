@@ -2,9 +2,17 @@
   description = "A powerful coding agent toolkit providing semantic retrieval and editing capabilities (MCP server & Agno integration)";
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+<<<<<<< HEAD
     flake-utils = {
       url = "github:numtide/flake-utils";
     };
+=======
+
+    flake-utils = {
+      url = "github:numtide/flake-utils";
+    };
+
+>>>>>>> d94ed33 (Update flake.nix)
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -74,6 +82,7 @@
               ]
             );
 
+<<<<<<< HEAD
         # Fixed marksman wrapper with proper ICU/.NET environment
         marksman-wrapped = pkgs.writeShellScriptBin "marksman" ''
           # Store original LD_LIBRARY_PATH for ICU libraries
@@ -96,11 +105,26 @@
           }; do
             export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$libdir"
           done
+=======
+  outputs = {
+    nixpkgs,
+    uv2nix,
+    pyproject-nix,
+    pyproject-build-systems,
+    flake-utils,
+    ...
+  }:
+    flake-utils.lib.eachDefaultSystem (system: let
+      pkgs = import nixpkgs {inherit system;};
+
+      inherit (pkgs) lib;
+>>>>>>> d94ed33 (Update flake.nix)
 
           # Clean up LD_LIBRARY_PATH (remove leading/trailing colons)
           export LD_LIBRARY_PATH="''${LD_LIBRARY_PATH#:}"
           export LD_LIBRARY_PATH="''${LD_LIBRARY_PATH%:}"
 
+<<<<<<< HEAD
           # Set ICU specific environment variables
           export ICU_DATA="${pkgs.icu.out}/share/icu"
           export ICU_LIB="${pkgs.icu.out}/lib"
@@ -113,6 +137,36 @@
           export DOTNET_RUNTIME_ID="linux-x64"
           export DOTNET_MULTILEVEL_LOOKUP=0
           export DOTNET_ROOT="${pkgs.dotnet-sdk_8}"
+=======
+      overlay = workspace.mkPyprojectOverlay {
+        sourcePreference = "wheel"; # or sourcePreference = "sdist";
+      };
+
+      pyprojectOverrides = final: prev: {
+        # Add setuptools for packages that need it during build
+        ruamel-yaml-clib = prev.ruamel-yaml-clib.overrideAttrs (old: {
+          nativeBuildInputs = (old.nativeBuildInputs or []) ++ [
+            final.setuptools
+          ];
+        });
+      };
+
+      python = pkgs.python311;
+
+      pythonSet =
+        (pkgs.callPackage pyproject-nix.build.packages {
+          inherit python;
+        }).overrideScope
+        (
+          lib.composeManyExtensions [
+            pyproject-build-systems.overlays.default
+            overlay
+            pyprojectOverrides
+          ]
+        );
+    in rec {
+      formatter = pkgs.alejandra;
+>>>>>>> d94ed33 (Update flake.nix)
 
 <<<<<<< HEAD
           # Clear Python-specific SSL settings to avoid conflicts
@@ -135,6 +189,7 @@
           # Set standard SSL cert path
           export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
 
+<<<<<<< HEAD
           if [ "$#" -eq 0 ]; then
             echo "Starting marksman language server..." >&2
             exec ${pkgs.marksman}/bin/marksman server
@@ -215,6 +270,33 @@
               '';
             };
           default = packages.serena;
+=======
+      devShells = {
+        default = pkgs.mkShell {
+          packages = [
+            python
+            pkgs.uv
+            pkgs.rust-analyzer
+          ];
+        nativeBuildInputs = [
+            pkgs.openssl
+            pkgs.pkg-config
+            pkgs.clang
+            pkgs.lld
+            pkgs.rustup
+          ];
+          env =
+            {
+              UV_PYTHON_DOWNLOADS = "never";
+              UV_PYTHON = python.interpreter;
+            }
+            // lib.optionalAttrs pkgs.stdenv.isLinux {
+              LD_LIBRARY_PATH = lib.makeLibraryPath pkgs.pythonManylinuxPackages.manylinux1;
+            };
+          shellHook = ''
+            unset PYTHONPATH
+          '';
+>>>>>>> d94ed33 (Update flake.nix)
         };
         apps.default = {
           type = "app";
