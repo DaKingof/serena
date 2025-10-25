@@ -327,6 +327,11 @@
               
               # Wrap the binary with necessary runtime dependencies
               wrapProgram $out/bin/serena \
+                --prefix PATH : "${lib.makeBinPath [
+                  pkgs.rust-analyzer
+                  pkgs.rustc
+                  pkgs.cargo
+                ]}" \
                 --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath [
                   pkgs.openssl
                   pkgs.stdenv.cc.cc.lib
@@ -348,6 +353,7 @@
             python
             pkgs.uv
             pkgs.rustup
+            pkgs.rust-analyzer
           ];
           nativeBuildInputs = [
             pkgs.openssl
