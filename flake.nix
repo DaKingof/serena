@@ -331,6 +331,7 @@
                   pkgs.rust-analyzer
                   pkgs.rustc
                   pkgs.cargo
+                  pkgs.marksman
                   pkgs.clang
                   pkgs.lld
                   pkgs.gcc
