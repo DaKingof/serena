@@ -74,11 +74,12 @@
               ]
             );
 
-        # FIX: Strict wrapper for Marksman.
-        # It ignores all arguments passed by the client (like '--stdio' or double 'server')
-        # and forces the correct start command.
+        # FIX:
+        # 1. Unset LD_LIBRARY_PATH so Marksman (.NET) doesn't crash due to library conflicts from the Python env.
+        # 2. Force 'server' subcommand so it starts up just like rust-analyzer.
         marksman-wrapped = pkgs.writeShellScriptBin "marksman" ''
-          exec ${pkgs.marksman}/bin/marksman server
+          unset LD_LIBRARY_PATH
+          exec ${pkgs.marksman}/bin/marksman server "$@"
         '';
 
       in
@@ -115,7 +116,7 @@
                       pkgs.rust-analyzer
                       pkgs.rustc
                       pkgs.cargo
-                      marksman-wrapped # <--- Using the strict wrapper
+                      marksman-wrapped # <--- Using the environment-safe wrapper
                       pkgs.clang
                       pkgs.lld
                       pkgs.gcc
@@ -155,7 +156,7 @@
               pkgs.uv
               pkgs.rustup
               pkgs.rust-analyzer
-              marksman-wrapped # <--- Included in devShell for local testing
+              marksman-wrapped # <--- Using the environment-safe wrapper
             ];
             nativeBuildInputs = [
               pkgs.openssl
