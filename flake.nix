@@ -1,14 +1,18 @@
 {
   description = "A powerful coding agent toolkit providing semantic retrieval and editing capabilities (MCP server & Agno integration)";
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
     flake-utils = {
       url = "github:numtide/flake-utils";
     };
+
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
     uv2nix = {
       url = "github:pyproject-nix/uv2nix";
       inputs = {
@@ -16,6 +20,7 @@
         nixpkgs.follows = "nixpkgs";
       };
     };
+
     pyproject-build-systems = {
       url = "github:pyproject-nix/build-system-pkgs";
       inputs = {
@@ -25,6 +30,7 @@
       };
     };
   };
+
   outputs =
     {
       nixpkgs,
@@ -39,16 +45,22 @@
       let
         pkgs = import nixpkgs { inherit system; };
         inherit (pkgs) lib;
-        workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
+
+        workspace = uv2nix.lib.workspace.loadWorkspace {
+          workspaceRoot = ./.;
+        };
+
         overlay = workspace.mkPyprojectOverlay {
           sourcePreference = "wheel";
         };
+
         pyprojectOverrides = final: prev: {
           ruamel-yaml-clib = prev.ruamel-yaml-clib.overrideAttrs (old: {
             nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [
               final.setuptools
             ];
           });
+
           cryptography = prev.cryptography.overrideAttrs (old: {
             nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [
               pkgs.clang
@@ -61,7 +73,9 @@
             ];
           });
         };
+
         python = pkgs.python311;
+
         pythonSet =
           (pkgs.callPackage pyproject-nix.build.packages {
             inherit python;
@@ -74,10 +88,10 @@
               ]
             );
 
-        # FIX:
-        # 1. Unset LD_LIBRARY_PATH so .NET finds its own libraries (ICU/OpenSSL) instead of Python's.
-        # 2. DO NOT set DOTNET_SYSTEM_GLOBALIZATION_INVARIANT (Marksman needs ICU to parse args).
-        # 3. Default to 'server' subcommand if no args are provided (mimicking rust-analyzer behavior).
+        # Marksman wrapper:
+        # 1. Unset LD_LIBRARY_PATH and OpenSSL-related vars so .NET uses its own runtime libs.
+        # 2. Do NOT set DOTNET_SYSTEM_GLOBALIZATION_INVARIANT (Marksman needs ICU).
+        # 3. Default to 'server' when called with no args (LSP mode).
         marksman-wrapped = pkgs.writeShellScriptBin "marksman" ''
           unset LD_LIBRARY_PATH
           unset SSL_CERT_FILE
@@ -92,10 +106,10 @@
             exec ${pkgs.marksman}/bin/marksman "$@"
           fi
         '';
-
       in
       rec {
         formatter = pkgs.alejandra;
+
         packages = {
           serena =
             let
@@ -121,13 +135,15 @@
                 cp -r ${venv}/* $out/
                 chmod -R u+w $out/bin
 
+                # Wrap Serena so the right tools & libraries are available,
+                # and our 'marksman' wrapper is the one on PATH.
                 wrapProgram $out/bin/serena \
                   --prefix PATH : "${
                     lib.makeBinPath [
+                      marksman-wrapped
                       pkgs.rust-analyzer
                       pkgs.rustc
                       pkgs.cargo
-                      marksman-wrapped # <--- Using the correctly fixed wrapper
                       pkgs.clang
                       pkgs.lld
                       pkgs.gcc
@@ -154,12 +170,15 @@
                   --set RUSTFLAGS "-C link-arg=-fuse-ld=lld -L ${pkgs.openssl.out}/lib"
               '';
             };
+
           default = packages.serena;
         };
+
         apps.default = {
           type = "app";
           program = "${packages.default}/bin/serena";
         };
+
         devShells = {
           default = pkgs.mkShell {
             packages = [
@@ -167,17 +186,20 @@
               pkgs.uv
               pkgs.rustup
               pkgs.rust-analyzer
-              marksman-wrapped # <--- Using the correctly fixed wrapper
+              marksman-wrapped
             ];
+
             nativeBuildInputs = [
               pkgs.openssl
               pkgs.pkg-config
               pkgs.clang
               pkgs.lld
             ];
+
             env = {
               UV_PYTHON_DOWNLOADS = "never";
               UV_PYTHON = python.interpreter;
+
               OPENSSL_DIR = "${pkgs.openssl.dev}";
               OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
               OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
@@ -192,6 +214,7 @@
                 ]
               );
             };
+
             shellHook = ''
               unset PYTHONPATH
             '';
