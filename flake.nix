@@ -76,6 +76,13 @@
                 pyprojectOverrides
               ]
             );
+
+        # FIX: Create a wrapper that forces 'marksman' to run as 'marksman server'.
+        # This mimics rust-analyzer's behavior so the app doesn't crash on startup.
+        marksman-wrapped = pkgs.writeShellScriptBin "marksman" ''
+          exec ${pkgs.marksman}/bin/marksman server "$@"
+        '';
+
       in
       rec {
         formatter = pkgs.alejandra;
@@ -117,7 +124,7 @@
                       pkgs.rust-analyzer
                       pkgs.rustc
                       pkgs.cargo
-                      pkgs.marksman
+                      marksman-wrapped # <--- Updated to use the wrapper
                       pkgs.clang
                       pkgs.lld
                       pkgs.gcc
@@ -157,7 +164,7 @@
               pkgs.uv
               pkgs.rustup
               pkgs.rust-analyzer
-              pkgs.marksman
+              marksman-wrapped # <--- Updated to use the wrapper in dev shell
             ];
             nativeBuildInputs = [
               pkgs.openssl
@@ -173,8 +180,15 @@
               OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
               PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
             }
-            # ... rest of env config
-            ;
+            // lib.optionalAttrs pkgs.stdenv.isLinux {
+              LD_LIBRARY_PATH = lib.makeLibraryPath (
+                pkgs.pythonManylinuxPackages.manylinux1
+                ++ [
+                  pkgs.openssl
+                  pkgs.stdenv.cc.cc.lib
+                ]
+              );
+            };
             shellHook = ''
               unset PYTHONPATH
             '';
