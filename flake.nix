@@ -74,12 +74,23 @@
               ]
             );
 
-        # FIX:
-        # 1. Unset LD_LIBRARY_PATH so Marksman (.NET) doesn't crash due to library conflicts from the Python env.
-        # 2. Force 'server' subcommand so it starts up just like rust-analyzer.
+        # FIX: A robust wrapper for Marksman (.NET)
+        # 1. Unsets LD_LIBRARY_PATH/OPENSSL variables to prevent .NET runtime crashes.
+        # 2. Defaults to 'server' mode if no arguments are provided (mimicking rust-analyzer).
         marksman-wrapped = pkgs.writeShellScriptBin "marksman" ''
+          export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
           unset LD_LIBRARY_PATH
-          exec ${pkgs.marksman}/bin/marksman server "$@"
+          unset SSL_CERT_FILE
+          unset OPENSSL_DIR
+          unset OPENSSL_LIB_DIR
+          unset OPENSSL_INCLUDE_DIR
+          unset PKG_CONFIG_PATH
+
+          if [ "$#" -eq 0 ]; then
+            exec ${pkgs.marksman}/bin/marksman server
+          else
+            exec ${pkgs.marksman}/bin/marksman "$@"
+          fi
         '';
 
       in
