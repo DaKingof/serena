@@ -74,11 +74,11 @@
               ]
             );
 
-        # FIX: A robust wrapper for Marksman (.NET)
-        # 1. Unsets LD_LIBRARY_PATH/OPENSSL variables to prevent .NET runtime crashes.
-        # 2. Defaults to 'server' mode if no arguments are provided (mimicking rust-analyzer).
+        # FIX:
+        # 1. Unset LD_LIBRARY_PATH so .NET finds its own libraries (ICU/OpenSSL) instead of Python's.
+        # 2. DO NOT set DOTNET_SYSTEM_GLOBALIZATION_INVARIANT (Marksman needs ICU to parse args).
+        # 3. Default to 'server' subcommand if no args are provided (mimicking rust-analyzer behavior).
         marksman-wrapped = pkgs.writeShellScriptBin "marksman" ''
-          export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
           unset LD_LIBRARY_PATH
           unset SSL_CERT_FILE
           unset OPENSSL_DIR
@@ -127,7 +127,7 @@
                       pkgs.rust-analyzer
                       pkgs.rustc
                       pkgs.cargo
-                      marksman-wrapped # <--- Using the environment-safe wrapper
+                      marksman-wrapped # <--- Using the correctly fixed wrapper
                       pkgs.clang
                       pkgs.lld
                       pkgs.gcc
@@ -167,7 +167,7 @@
               pkgs.uv
               pkgs.rustup
               pkgs.rust-analyzer
-              marksman-wrapped # <--- Using the environment-safe wrapper
+              marksman-wrapped # <--- Using the correctly fixed wrapper
             ];
             nativeBuildInputs = [
               pkgs.openssl
