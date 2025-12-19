@@ -41,17 +41,14 @@
         inherit (pkgs) lib;
         workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
         overlay = workspace.mkPyprojectOverlay {
-          sourcePreference = "wheel"; # or sourcePreference = "sdist";
+          sourcePreference = "wheel";
         };
         pyprojectOverrides = final: prev: {
-          # Add setuptools for packages that need it during build
           ruamel-yaml-clib = prev.ruamel-yaml-clib.overrideAttrs (old: {
             nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [
               final.setuptools
             ];
           });
-
-          # Add build dependencies for packages that need native compilation
           cryptography = prev.cryptography.overrideAttrs (old: {
             nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [
               pkgs.clang
@@ -77,10 +74,11 @@
               ]
             );
 
-        # FIX: Create a wrapper that forces 'marksman' to run as 'marksman server'.
-        # This mimics rust-analyzer's behavior so the app doesn't crash on startup.
+        # FIX: Strict wrapper for Marksman.
+        # It ignores all arguments passed by the client (like '--stdio' or double 'server')
+        # and forces the correct start command.
         marksman-wrapped = pkgs.writeShellScriptBin "marksman" ''
-          exec ${pkgs.marksman}/bin/marksman server "$@"
+          exec ${pkgs.marksman}/bin/marksman server
         '';
 
       in
@@ -91,7 +89,6 @@
             let
               venv = pythonSet.mkVirtualEnv "serena" workspace.deps.default;
             in
-            # Wrap the virtualenv to include runtime dependencies
             pkgs.stdenv.mkDerivation {
               pname = "serena";
               version = "0.1.0";
@@ -102,29 +99,23 @@
 
               buildInputs = [
                 pkgs.openssl
-                pkgs.stdenv.cc.cc.lib # For libstdc++
+                pkgs.stdenv.cc.cc.lib
               ];
 
               phases = [ "installPhase" ];
 
               installPhase = ''
-                # Create output directory
                 mkdir -p $out
-
-                # Copy all files from the venv
                 cp -r ${venv}/* $out/
-
-                # Make the bin directory writable so we can wrap the program
                 chmod -R u+w $out/bin
 
-                # Wrap the binary with necessary runtime dependencies
                 wrapProgram $out/bin/serena \
                   --prefix PATH : "${
                     lib.makeBinPath [
                       pkgs.rust-analyzer
                       pkgs.rustc
                       pkgs.cargo
-                      marksman-wrapped # <--- Updated to use the wrapper
+                      marksman-wrapped # <--- Using the strict wrapper
                       pkgs.clang
                       pkgs.lld
                       pkgs.gcc
@@ -164,7 +155,7 @@
               pkgs.uv
               pkgs.rustup
               pkgs.rust-analyzer
-              marksman-wrapped # <--- Updated to use the wrapper in dev shell
+              marksman-wrapped # <--- Included in devShell for local testing
             ];
             nativeBuildInputs = [
               pkgs.openssl
