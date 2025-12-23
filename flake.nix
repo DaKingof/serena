@@ -114,12 +114,23 @@
           export DOTNET_MULTILEVEL_LOOKUP=0
           export DOTNET_ROOT="${pkgs.dotnet-sdk_8}"
 
+<<<<<<< HEAD
           # Clear Python-specific SSL settings to avoid conflicts
           unset SSL_CERT_FILE
           unset OPENSSL_DIR
           unset OPENSSL_LIB_DIR
           unset OPENSSL_INCLUDE_DIR
           unset PKG_CONFIG_PATH
+=======
+      packages = {
+        serena-env = pythonSet.mkVirtualEnv "serena-env" workspace.deps.default;
+        serena = pkgs.runCommand "serena" {} ''
+          mkdir -p $out/bin
+          ln -s ${packages.serena-env}/bin/serena $out/bin/serena
+        '';
+        default = packages.serena;
+      };
+>>>>>>> upstream/main
 
           # Set standard SSL cert path
           export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"

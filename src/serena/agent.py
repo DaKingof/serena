@@ -17,14 +17,15 @@ from sensai.util.logging import LogTime
 from interprompt.jinja_template import JinjaTemplate
 from serena import serena_version
 from serena.analytics import RegisteredTokenCountEstimator, ToolUsageStats
-from serena.config.context_mode import RegisteredContext, SerenaAgentContext, SerenaAgentMode
-from serena.config.serena_config import SerenaConfig, ToolInclusionDefinition, ToolSet
+from serena.config.context_mode import SerenaAgentContext, SerenaAgentMode
+from serena.config.serena_config import LanguageBackend, SerenaConfig, ToolInclusionDefinition
 from serena.dashboard import SerenaDashboardAPI
 from serena.ls_manager import LanguageServerManager
 from serena.project import Project
 from serena.prompt_factory import SerenaPromptFactory
 from serena.task_executor import TaskExecutor
-from serena.tools import ActivateProjectTool, GetCurrentConfigTool, Tool, ToolMarker, ToolRegistry
+from serena.tools import ActivateProjectTool, GetCurrentConfigTool, ReplaceContentTool, Tool, ToolMarker, ToolRegistry
+from serena.util.gui import system_has_usable_display
 from serena.util.inspection import iter_subclasses
 from serena.util.logging import MemoryLogHandler
 from solidlsp.ls_config import Language
@@ -43,6 +44,10 @@ class ProjectNotFoundError(Exception):
 
 
 class AvailableTools:
+    """
+    Represents the set of available/exposed tools of a SerenaAgent.
+    """
+
     def __init__(self, tools: list[Tool]):
         """
         :param tools: the list of available tools
@@ -57,6 +62,94 @@ class AvailableTools:
 
     def __len__(self) -> int:
         return len(self.tools)
+
+
+class ToolSet:
+    """
+    Represents a set of tools by their names.
+    """
+
+    LEGACY_TOOL_NAME_MAPPING = {"replace_regex": ReplaceContentTool.get_name_from_cls()}
+    """
+    maps legacy tool names to their new names for backward compatibility
+    """
+
+    def __init__(self, tool_names: set[str]) -> None:
+        self._tool_names = tool_names
+
+    @classmethod
+    def default(cls) -> "ToolSet":
+        """
+        :return: the default tool set, which contains all tools that are enabled by default
+        """
+        from serena.tools import ToolRegistry
+
+        return cls(set(ToolRegistry().get_tool_names_default_enabled()))
+
+    def apply(self, *tool_inclusion_definitions: "ToolInclusionDefinition") -> "ToolSet":
+        """
+        Applies one or more tool inclusion definitions to this tool set,
+        resulting in a new tool set.
+
+        :param tool_inclusion_definitions: the definitions to apply
+        :return: a new tool set with the definitions applied
+        """
+        from serena.tools import ToolRegistry
+
+        def get_updated_tool_name(tool_name: str) -> str:
+            """Retrieves the updated tool name if the provided tool name is deprecated, logging a warning."""
+            if tool_name in self.LEGACY_TOOL_NAME_MAPPING:
+                new_tool_name = self.LEGACY_TOOL_NAME_MAPPING[tool_name]
+                log.warning("Tool name '%s' is deprecated, please use '%s' instead", tool_name, new_tool_name)
+                return new_tool_name
+            return tool_name
+
+        registry = ToolRegistry()
+        tool_names = set(self._tool_names)
+        for definition in tool_inclusion_definitions:
+            included_tools = []
+            excluded_tools = []
+            for included_tool in definition.included_optional_tools:
+                included_tool = get_updated_tool_name(included_tool)
+                if not registry.is_valid_tool_name(included_tool):
+                    raise ValueError(f"Invalid tool name '{included_tool}' provided for inclusion")
+                if included_tool not in tool_names:
+                    tool_names.add(included_tool)
+                    included_tools.append(included_tool)
+            for excluded_tool in definition.excluded_tools:
+                excluded_tool = get_updated_tool_name(excluded_tool)
+                if not registry.is_valid_tool_name(excluded_tool):
+                    raise ValueError(f"Invalid tool name '{excluded_tool}' provided for exclusion")
+                if excluded_tool in tool_names:
+                    tool_names.remove(excluded_tool)
+                    excluded_tools.append(excluded_tool)
+            if included_tools:
+                log.info(f"{definition} included {len(included_tools)} tools: {', '.join(included_tools)}")
+            if excluded_tools:
+                log.info(f"{definition} excluded {len(excluded_tools)} tools: {', '.join(excluded_tools)}")
+        return ToolSet(tool_names)
+
+    def without_editing_tools(self) -> "ToolSet":
+        """
+        :return: a new tool set that excludes all tools that can edit
+        """
+        from serena.tools import ToolRegistry
+
+        registry = ToolRegistry()
+        tool_names = set(self._tool_names)
+        for tool_name in self._tool_names:
+            if registry.get_tool_class_by_name(tool_name).can_edit():
+                tool_names.remove(tool_name)
+        return ToolSet(tool_names)
+
+    def get_tool_names(self) -> set[str]:
+        """
+        Returns the names of the tools that are currently included in the tool set.
+        """
+        return self._tool_names
+
+    def includes_name(self, tool_name: str) -> bool:
+        return tool_name in self._tool_names
 
 
 class SerenaAgent:
@@ -103,6 +196,7 @@ class SerenaAgent:
         # open GUI log window if enabled
         self._gui_log_viewer: Optional["GuiLogViewer"] = None
         if self.serena_config.gui_log_window_enabled:
+            log.info("Opening GUI window")
             if platform.system() == "Darwin":
                 log.warning("GUI log window is not supported on macOS")
             else:
@@ -112,6 +206,8 @@ class SerenaAgent:
 
                 self._gui_log_viewer = GuiLogViewer("dashboard", title="Serena Logs", memory_log_handler=get_memory_log_handler())
                 self._gui_log_viewer.start()
+        else:
+            log.debug("GUI window is disabled")
 
         # set the agent context
         if context is None:
@@ -131,7 +227,10 @@ class SerenaAgent:
         self._tool_usage_stats = ToolUsageStats(token_count_estimator)
 
         # log fundamental information
-        log.info(f"Starting Serena server (version={serena_version()}, process id={os.getpid()}, parent process id={os.getppid()})")
+        log.info(
+            f"Starting Serena server (version={serena_version()}, process id={os.getpid()}, parent process id={os.getppid()}; "
+            f"language backend={self.serena_config.language_backend.name})"
+        )
         log.info("Configuration file: %s", self.serena_config.config_file_path)
         log.info("Available projects: {}".format(", ".join(self.serena_config.project_names)))
         log.info(f"Loaded tools ({len(self._all_tools)}): {', '.join([tool.get_name_from_cls() for tool in self._all_tools.values()])}")
@@ -141,9 +240,9 @@ class SerenaAgent:
         # determine the base toolset defining the set of exposed tools (which e.g. the MCP shall see),
         # limited by the Serena config, the context (which is fixed for the session) and JetBrains mode
         tool_inclusion_definitions: list[ToolInclusionDefinition] = [self.serena_config, self._context]
-        if self._context.name == RegisteredContext.IDE_ASSISTANT.value:
-            tool_inclusion_definitions.extend(self._ide_assistant_context_tool_inclusion_definitions(project))
-        if self.serena_config.jetbrains:
+        if self._context.single_project:
+            tool_inclusion_definitions.extend(self._single_project_context_tool_inclusion_definitions(project))
+        if self.serena_config.language_backend == LanguageBackend.JETBRAINS:
             tool_inclusion_definitions.append(SerenaAgentMode.from_name_internal("jetbrains"))
 
         self._base_tool_set = ToolSet.default().apply(*tool_inclusion_definitions)
@@ -179,15 +278,21 @@ class SerenaAgent:
         if self.serena_config.web_dashboard:
             self._dashboard_thread, port = SerenaDashboardAPI(
                 get_memory_log_handler(), tool_names, agent=self, tool_usage_stats=self._tool_usage_stats
-            ).run_in_thread()
-            dashboard_url = f"http://127.0.0.1:{port}/dashboard/index.html"
+            ).run_in_thread(host=self.serena_config.web_dashboard_listen_address)
+            dashboard_host = self.serena_config.web_dashboard_listen_address
+            if dashboard_host == "0.0.0.0":
+                dashboard_host = "localhost"
+            dashboard_url = f"http://{dashboard_host}:{port}/dashboard/index.html"
             log.info("Serena web dashboard started at %s", dashboard_url)
             if self.serena_config.web_dashboard_open_on_launch:
-                # open the dashboard URL in the default web browser (using a separate process to control
-                # output redirection)
-                process = multiprocessing.Process(target=self._open_dashboard, args=(dashboard_url,))
-                process.start()
-                process.join(timeout=1)
+                if not system_has_usable_display():
+                    log.warning("Not opening the Serena web dashboard automatically because no usable display was detected.")
+                else:
+                    # open the dashboard URL in the default web browser (using a separate process to control
+                    # output redirection)
+                    process = multiprocessing.Process(target=self._open_dashboard, args=(dashboard_url,))
+                    process.start()
+                    process.join(timeout=1)
             # inform the GUI window (if any)
             if self._gui_log_viewer is not None:
                 self._gui_log_viewer.set_dashboard_url(dashboard_url)
@@ -240,7 +345,7 @@ class SerenaAgent:
                 os.environ["COMSPEC"] = ""  # force use of default shell
                 log.info("Adjusting COMSPEC environment variable to use the default shell instead of '%s'", comspec)
 
-    def _ide_assistant_context_tool_inclusion_definitions(self, project_root_or_name: str | None) -> list[ToolInclusionDefinition]:
+    def _single_project_context_tool_inclusion_definitions(self, project_root_or_name: str | None) -> list[ToolInclusionDefinition]:
         """
         In the IDE assistant context, the agent is assumed to work on a single project, and we thus
         want to apply that project's tool exclusions/inclusions from the get-go, limiting the set
@@ -258,6 +363,9 @@ class SerenaAgent:
             #   and provide responses to the client immediately.
             project = self.load_project_from_path_or_name(project_root_or_name, autogenerate=False)
             if project is not None:
+                log.info(
+                    "Applying tool inclusion/exclusion definitions for single-project context based on project '%s'", project.project_name
+                )
                 tool_inclusion_definitions.append(
                     ToolInclusionDefinition(
                         excluded_tools=[ActivateProjectTool.get_name_from_cls(), GetCurrentConfigTool.get_name_from_cls()]
@@ -413,7 +521,7 @@ class SerenaAgent:
         """
         :return: whether this agent uses language server-based code analysis
         """
-        return not self.serena_config.jetbrains
+        return self.serena_config.language_backend == LanguageBackend.LSP
 
     def _activate_project(self, project: Project) -> None:
         log.info(f"Activating {project.project_name} at {project.project_root}")
@@ -580,18 +688,22 @@ class SerenaAgent:
         ToolRegistry().print_tool_overview(self._active_tools.values())
 
     def __del__(self) -> None:
+        self.shutdown()
+
+    def shutdown(self, timeout: float = 2.0) -> None:
         """
-        Destructor to clean up the language server instance and GUI logger
+        Shuts down the agent, freeing resources and stopping background tasks.
         """
         if not hasattr(self, "_is_initialized"):
             return
         log.info("SerenaAgent is shutting down ...")
         if self._active_project is not None:
-            self._active_project.shutdown()
+            self._active_project.shutdown(timeout=timeout)
             self._active_project = None
         if self._gui_log_viewer:
             log.info("Stopping the GUI log window ...")
             self._gui_log_viewer.stop()
+            self._gui_log_viewer = None
 
     def get_tool_by_name(self, tool_name: str) -> Tool:
         tool_class = ToolRegistry().get_tool_class_by_name(tool_name)
