@@ -1,14 +1,15 @@
 {
   description = "A powerful coding agent toolkit providing semantic retrieval and editing capabilities (MCP server & Agno integration)";
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    flake-utils = {
-      url = "github:numtide/flake-utils";
-    };
+    flake-utils.url = "github:numtide/flake-utils";
+
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
     uv2nix = {
       url = "github:pyproject-nix/uv2nix";
       inputs = {
@@ -16,6 +17,7 @@
         nixpkgs.follows = "nixpkgs";
       };
     };
+
     pyproject-build-systems = {
       url = "github:pyproject-nix/build-system-pkgs";
       inputs = {
@@ -25,6 +27,7 @@
       };
     };
   };
+
   outputs =
     {
       nixpkgs,
@@ -39,16 +42,15 @@
       let
         pkgs = import nixpkgs { inherit system; };
         inherit (pkgs) lib;
+
         workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
-        overlay = workspace.mkPyprojectOverlay {
-          sourcePreference = "wheel";
-        };
+        overlay = workspace.mkPyprojectOverlay { sourcePreference = "wheel"; };
+
         pyprojectOverrides = final: prev: {
           ruamel-yaml-clib = prev.ruamel-yaml-clib.overrideAttrs (old: {
-            nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [
-              final.setuptools
-            ];
+            nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ final.setuptools ];
           });
+
           cryptography = prev.cryptography.overrideAttrs (old: {
             nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [
               pkgs.clang
@@ -56,33 +58,24 @@
               pkgs.pkg-config
               pkgs.openssl.dev
             ];
-            buildInputs = (old.buildInputs or [ ]) ++ [
-              pkgs.openssl
-            ];
+            buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.openssl ];
           });
         };
+
         python = pkgs.python311;
-        pythonSet =
-          (pkgs.callPackage pyproject-nix.build.packages {
-            inherit python;
-          }).overrideScope
-            (
-              lib.composeManyExtensions [
-                pyproject-build-systems.overlays.default
-                overlay
-                pyprojectOverrides
-              ]
-            );
+        pythonSet = (pkgs.callPackage pyproject-nix.build.packages { inherit python; }).overrideScope (
+          lib.composeManyExtensions [
+            pyproject-build-systems.overlays.default
+            overlay
+            pyprojectOverrides
+          ]
+        );
 
         # Fixed marksman wrapper with proper ICU/.NET environment
         marksman-wrapped = pkgs.writeShellScriptBin "marksman" ''
-          # Store original LD_LIBRARY_PATH for ICU libraries
           ORIGINAL_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
-
-          # Clear Python-specific paths but keep system libraries
           export LD_LIBRARY_PATH=""
 
-          # Add essential system libraries for .NET
           for libdir in ${
             lib.makeLibraryPath [
               pkgs.icu
@@ -97,31 +90,24 @@
             export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$libdir"
           done
 
-          # Clean up LD_LIBRARY_PATH (remove leading/trailing colons)
           export LD_LIBRARY_PATH="''${LD_LIBRARY_PATH#:}"
           export LD_LIBRARY_PATH="''${LD_LIBRARY_PATH%:}"
 
-          # Set ICU specific environment variables
           export ICU_DATA="${pkgs.icu.out}/share/icu"
           export ICU_LIB="${pkgs.icu.out}/lib"
 
-          # Set .NET globalization settings
           export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=0
           export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT_MODE=0
-
-          # Set .NET runtime behavior
           export DOTNET_RUNTIME_ID="linux-x64"
           export DOTNET_MULTILEVEL_LOOKUP=0
           export DOTNET_ROOT="${pkgs.dotnet-sdk_8}"
 
-          # Clear Python-specific SSL settings to avoid conflicts
           unset SSL_CERT_FILE
           unset OPENSSL_DIR
           unset OPENSSL_LIB_DIR
           unset OPENSSL_INCLUDE_DIR
           unset PKG_CONFIG_PATH
 
-          # Set standard SSL cert path
           export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
 
           if [ "$#" -eq 0 ]; then
@@ -131,10 +117,10 @@
             exec ${pkgs.marksman}/bin/marksman "$@"
           fi
         '';
-
       in
       rec {
         formatter = pkgs.alejandra;
+
         packages = {
           serena =
             let
@@ -144,9 +130,7 @@
               pname = "serena";
               version = "0.1.0";
 
-              nativeBuildInputs = [
-                pkgs.makeWrapper
-              ];
+              nativeBuildInputs = [ pkgs.makeWrapper ];
 
               buildInputs = [
                 pkgs.openssl
@@ -161,11 +145,12 @@
                 chmod -R u+w $out/bin
 
                 wrapProgram $out/bin/serena \
+                  --run 'export CARGO_HOME="''${CARGO_HOME:-$HOME/.cargo}"' \
+                  --run 'export RUSTUP_HOME="''${RUSTUP_HOME:-$HOME/.rustup}"' \
+                  --run 'export PATH="$HOME/.cargo/bin:$PATH"' \
                   --prefix PATH : "${
                     lib.makeBinPath [
-                      pkgs.rust-analyzer
-                      pkgs.rustc
-                      pkgs.cargo
+                      pkgs.rustup
                       marksman-wrapped
                       pkgs.clang
                       pkgs.lld
@@ -197,25 +182,24 @@
                   --set OPENSSL_LIB_DIR "${pkgs.openssl.out}/lib" \
                   --set OPENSSL_INCLUDE_DIR "${pkgs.openssl.dev}/include" \
                   --set OPENSSL_NO_VENDOR "1" \
-                  --set RUST_SRC_PATH "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}" \
-                  --set CC "${pkgs.clang}/bin/clang" \
-                  --set CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER "${pkgs.clang}/bin/clang" \
-                  --set RUSTFLAGS "-C link-arg=-fuse-ld=lld -L ${pkgs.openssl.out}/lib"
+                  --set CC "${pkgs.clang}/bin/clang"
               '';
             };
+
           default = packages.serena;
         };
+
         apps.default = {
           type = "app";
           program = "${packages.default}/bin/serena";
         };
+
         devShells = {
           default = pkgs.mkShell {
             packages = [
               python
               pkgs.uv
               pkgs.rustup
-              pkgs.rust-analyzer
               marksman-wrapped
               pkgs.icu
               pkgs.dotnet-sdk_8
@@ -223,21 +207,29 @@
               pkgs.libkrb5
               pkgs.curl
             ];
+
             nativeBuildInputs = [
               pkgs.openssl
               pkgs.pkg-config
               pkgs.clang
               pkgs.lld
             ];
+
             env = {
               UV_PYTHON_DOWNLOADS = "never";
               UV_PYTHON = python.interpreter;
+
               OPENSSL_DIR = "${pkgs.openssl.dev}";
               OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
               OPENSSL_INCLUDE_DIR = "${pkgs.openssl.dev}/include";
               PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
+
               ICU_DATA = "${pkgs.icu.out}/share/icu";
               ICU_LIB = "${pkgs.icu.out}/lib";
+
+              # rustup locations (user-writable)
+              CARGO_HOME = "$HOME/.cargo";
+              RUSTUP_HOME = "$HOME/.rustup";
             }
             // lib.optionalAttrs pkgs.stdenv.isLinux {
               LD_LIBRARY_PATH = lib.makeLibraryPath (
@@ -252,8 +244,17 @@
                 ]
               );
             };
+
             shellHook = ''
               unset PYTHONPATH
+              export PATH="$HOME/.cargo/bin:$PATH"
+
+              # optional: bootstrap toolchain if missing (no-op if already installed)
+              if ! rustup toolchain list | grep -q '^stable'; then
+                echo "Installing rustup stable toolchain..."
+                rustup toolchain install stable
+              fi
+              rustup component add rust-analyzer >/dev/null 2>&1 || true
             '';
           };
         };
